@@ -14,6 +14,9 @@ qrtone_t* qrtone = NULL;
 
 // audio circular buffer size
 #define MAX_AUDIO_WINDOW_SIZE 512
+#define LEDR        (22u)
+#define LEDG        (23u)
+#define LEDB        (24u)
 
 // buffer to read samples into, each sample is 16-bits
 short sampleBuffer[256];
@@ -32,8 +35,10 @@ void setup() {
   // Uncomment to wait for serial comm to begin setup
   // while (!Serial);
 
-  // initialize digital pin LED_BUILTIN as an output.
-  pinMode(LED_BUILTIN, OUTPUT);
+  // initialize digital pins
+  pinMode(LEDR, OUTPUT);
+  pinMode(LEDG, OUTPUT);
+  pinMode(LEDB, OUTPUT);
 
   // Allocate struct
   qrtone = qrtone_new();
@@ -52,57 +57,16 @@ void setup() {
 
   // initialize PDM with:
   // - one channel (mono mode)
-  // - a 16 kHz sample rate
+  // - a 42 kHz sample rate
   if (!PDM.begin(1, SAMPLE_RATE)) {
     Serial.println("Failed to start PDM!");
     while (1);
   }
-}
 
-/**
- * Display message on Oled Screen
- * Message use a special format specified by the demo android app:
- * [field type int8_t][field_length int8_t][field_content int8_t array]
- * There is currently 2 type of field username(0) and message(1)à
- */
-void process_message(void) {
-  int32_t user_name = 0;
-  int user_name_length = 0;
-  int32_t message = 0;
-  int message_length = 0;
-  int8_t* data = qrtone_get_payload(qrtone);
-  int32_t data_length = qrtone_get_payload_length(qrtone);
-  int c = 0;
-  while(c < data_length) {
-    int8_t field_type = data[c++];
-    if(field_type == 0) {
-      // username
-      user_name_length = (int32_t)data[c++];
-      user_name = c;
-      c += user_name_length;
-    } else if(field_type == 1) {
-      message_length = (int32_t)data[c++];
-      message = c;
-      c += message_length;
-    }
-  }
-  if(user_name > 0 && message > 0) {
-    // Print username
-    char buf[256];
-    memset(buf, 0, 256);
-    memcpy(buf, data + user_name, user_name_length);
-    Serial.println(buf);
-    // Print message
-    memset(buf, 0, 256);
-    memcpy(buf, data + message, message_length);
-    Serial.println(buf);
-    // Special commands
-    if(strcmp( buf, "off" ) == 0) {
-      digitalWrite(LED_BUILTIN, LOW);
-    } else if(strcmp( buf, "on" ) == 0) {
-      digitalWrite(LED_BUILTIN, HIGH);
-    }
-  }
+
+  analogWrite(LEDR, UINT8_MAX);
+  analogWrite(LEDG, UINT8_MAX);
+  analogWrite(LEDB, UINT8_MAX);
 }
 
 void debug_serial(void *ptr, int64_t location, float first_tone_level, float second_tone_level, int32_t triggered) {
@@ -126,8 +90,17 @@ void loop() {
       int32_t position_in_buffer = ((scaled_input_buffer_consume_cursor + sample_index) % MAX_AUDIO_WINDOW_SIZE);
       int32_t window_length = min(max_window_length, min(sample_to_read - sample_index, MAX_AUDIO_WINDOW_SIZE - position_in_buffer % MAX_AUDIO_WINDOW_SIZE));
       if(qrtone_push_samples(qrtone, scaled_input_buffer + position_in_buffer, window_length)) {
-        // Got a message
-        process_message();
+        // Got a message        
+        int8_t* data = qrtone_get_payload(qrtone);
+        int32_t data_length = qrtone_get_payload_length(qrtone);
+        if(data_length >= 3) {
+          char buf[100];
+          sprintf(buf, "%d,%d,%d\n\r", (uint8_t)data[0], (uint8_t)data[1], (uint8_t)data[2]);
+          Serial.write(buf);
+          analogWrite(LEDR, UINT8_MAX - (uint8_t)data[0]);
+          analogWrite(LEDG, UINT8_MAX - (uint8_t)data[1]);
+          analogWrite(LEDB, UINT8_MAX - (uint8_t)data[2]);
+        }
       }
       sample_index += window_length;
       max_window_length = qrtone_get_maximum_length(qrtone);      
